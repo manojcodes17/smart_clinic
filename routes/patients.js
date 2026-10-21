@@ -8,17 +8,40 @@ const {
     authorizeRoles
 } = require("../middleware/auth");
 
+function validatePatientInput({ name, dob, gender, phone, email }) {
+    if (typeof name !== "string" || !name.trim()) {
+        return "Patient name is required";
+    }
+    if (!dob || !gender || !phone || !email) {
+        return "Date of birth, gender, phone and email are required";
+    }
+    const parsedDob = /^\d{4}-\d{2}-\d{2}$/.test(dob) ? new Date(`${dob}T00:00:00Z`) : null;
+    if (!parsedDob || Number.isNaN(parsedDob.getTime()) || parsedDob.toISOString().slice(0, 10) !== dob || dob > new Date().toISOString().slice(0, 10)) {
+        return "Enter a valid date of birth that is not in the future";
+    }
+    if (!["Male", "Female", "Other"].includes(gender)) {
+        return "Select a valid gender";
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return "Enter a valid email address";
+    }
+    if (!/^[0-9+() -]{7,20}$/.test(phone) || phone.replace(/\D/g, "").length < 7) {
+        return "Enter a valid phone number";
+    }
+    return null;
+}
+
 
 // =====================================================
 // CREATE PATIENT
 // POST /api/patients
-// Allowed: ADMIN, DOCTOR
+// Allowed: ADMIN, RECEPTIONIST
 // =====================================================
 
 router.post(
     "/",
     authenticateToken,
-    authorizeRoles("admin", "doctor"),
+    authorizeRoles("admin", "receptionist"),
     async (req, res) => {
 
         try {
@@ -33,11 +56,11 @@ router.post(
             } = req.body;
 
 
-            // Validate name
-            if (!name || name.trim() === "") {
+            const validationError = validatePatientInput({ name, dob, gender, phone, email });
+            if (validationError) {
 
                 return res.status(400).json({
-                    message: "Patient name is required"
+                    message: validationError
                 });
 
             }
@@ -104,16 +127,29 @@ router.post(
 router.get(
     "/",
     authenticateToken,
-    authorizeRoles("admin", "doctor"),
+    authorizeRoles("admin", "doctor", "receptionist"),
     async (req, res) => {
 
         try {
-
+            const doctorScope = req.user.role === "doctor"
+                ? `WHERE EXISTS (
+                       SELECT 1 FROM appointments a
+                       WHERE a.patient_id = p.patient_id AND a.doctor_id = ?
+                   ) OR EXISTS (
+                       SELECT 1 FROM medical_records mr
+                       WHERE mr.patient_id = p.patient_id AND mr.doctor_id = ?
+                   )`
+                : "";
+            const parameters = req.user.role === "doctor"
+                ? [req.user.doctor_id, req.user.doctor_id]
+                : [];
             const [patients] = await db.query(
 
-                `SELECT *
-                 FROM patients
-                 ORDER BY patient_id DESC`
+                `SELECT p.*
+                 FROM patients p
+                 ${doctorScope}
+                 ORDER BY p.patient_id DESC`,
+                parameters
 
             );
 
@@ -156,7 +192,7 @@ router.get(
 router.get(
     "/:id",
     authenticateToken,
-    authorizeRoles("admin", "doctor"),
+    authorizeRoles("admin", "doctor", "receptionist"),
     async (req, res) => {
 
         try {
@@ -164,13 +200,26 @@ router.get(
             const patientId = req.params.id;
 
 
+            const doctorScope = req.user.role === "doctor"
+                ? `AND (
+                       EXISTS (
+                           SELECT 1 FROM appointments a
+                           WHERE a.patient_id = p.patient_id AND a.doctor_id = ?
+                       ) OR EXISTS (
+                           SELECT 1 FROM medical_records mr
+                           WHERE mr.patient_id = p.patient_id AND mr.doctor_id = ?
+                       )
+                   )`
+                : "";
+            const parameters = req.user.role === "doctor"
+                ? [patientId, req.user.doctor_id, req.user.doctor_id]
+                : [patientId];
             const [patients] = await db.query(
 
-                `SELECT *
-                 FROM patients
-                 WHERE patient_id = ?`,
-
-                [patientId]
+                `SELECT p.*
+                 FROM patients p
+                 WHERE p.patient_id = ? ${doctorScope}`,
+                parameters
 
             );
 
@@ -212,13 +261,13 @@ router.get(
 // =====================================================
 // UPDATE PATIENT
 // PUT /api/patients/:id
-// Allowed: ADMIN, DOCTOR
+// Allowed: ADMIN, RECEPTIONIST
 // =====================================================
 
 router.put(
     "/:id",
     authenticateToken,
-    authorizeRoles("admin", "doctor"),
+    authorizeRoles("admin", "receptionist"),
     async (req, res) => {
 
         try {
@@ -236,12 +285,12 @@ router.put(
             } = req.body;
 
 
-            // Validate name
-            if (!name || name.trim() === "") {
+            const validationError = validatePatientInput({ name, dob, gender, phone, email });
+            if (validationError) {
 
                 return res.status(400).json({
 
-                    message: "Patient name is required"
+                    message: validationError
 
                 });
 
@@ -360,6 +409,12 @@ router.delete(
         catch (error) {
 
             console.error("DELETE PATIENT ERROR:", error);
+
+            if (["ER_ROW_IS_REFERENCED", "ER_ROW_IS_REFERENCED_2"].includes(error.code)) {
+                return res.status(409).json({
+                    message: "Patient has linked appointments or medical records and cannot be deleted"
+                });
+            }
 
             res.status(500).json({
 

@@ -26,7 +26,8 @@ router.post(
         const {
             username,
             password,
-            role
+            role,
+            doctor_id
         } = req.body;
 
         // Validate input
@@ -40,13 +41,28 @@ router.post(
         const allowedRoles = [
             "admin",
             "doctor",
-            "patient"
+            "patient",
+            "receptionist"
         ];
 
         if (!allowedRoles.includes(role)) {
             return res.status(400).json({
                 message: "Invalid role"
             });
+        }
+
+        if (role === "doctor" && !doctor_id) {
+            return res.status(400).json({ message: "A doctor profile is required for doctor accounts" });
+        }
+
+        if (role === "doctor") {
+            const [doctors] = await db.query(
+                "SELECT doctor_id FROM doctors WHERE doctor_id = ?",
+                [doctor_id]
+            );
+            if (doctors.length === 0) {
+                return res.status(404).json({ message: "Doctor profile not found" });
+            }
         }
 
         // Check existing username
@@ -67,12 +83,13 @@ router.post(
         // Save user
         const [result] = await db.query(
             `INSERT INTO users
-            (username, password_hash, role)
-            VALUES (?, ?, ?)`,
+            (username, password_hash, role, doctor_id)
+            VALUES (?, ?, ?, ?)`,
             [
                 username,
                 passwordHash,
-                role
+                role,
+                role === "doctor" ? doctor_id : null
             ]
         );
 
@@ -124,7 +141,8 @@ router.post("/login", async (req, res) => {
                 user_id,
                 username,
                 password_hash,
-                role
+                role,
+                doctor_id
              FROM users
              WHERE username = ?`,
             [username]
@@ -155,7 +173,8 @@ router.post("/login", async (req, res) => {
             {
                 user_id: user.user_id,
                 username: user.username,
-                role: user.role
+                role: user.role,
+                doctor_id: user.doctor_id
             },
             process.env.JWT_SECRET,
             {
@@ -169,7 +188,8 @@ router.post("/login", async (req, res) => {
             user: {
                 user_id: user.user_id,
                 username: user.username,
-                role: user.role
+                role: user.role,
+                doctor_id: user.doctor_id
             }
         });
 

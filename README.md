@@ -81,13 +81,13 @@ The API exits during startup if required database or JWT configuration is missin
 
 ## Application workflow
 
-1. A staff member signs in with the account created by an administrator. The frontend stores the JWT and user details in browser `localStorage`.
-2. The dashboard requests patients, doctors, appointments, and medical records with the bearer token.
-3. Staff can register a patient from the Patients page. Dashboard and Analytics show aggregate counts; the other pages display their respective lists.
-4. Use the API to create or update doctors, appointments, and medical records. Those operations are not currently exposed as forms in the dashboard.
-5. Logging out removes the token and returns to the sign-in screen.
+1. Staff sign in with an account created by an administrator. The frontend stores the JWT and user details in browser `localStorage`.
+2. Dashboard requests load live patients, doctors, appointments, and, for admins and doctors, medical records.
+3. The Patients, Doctors, Appointments, and Medical Records pages provide searchable lists, filters, detail views, and role-appropriate create, edit, cancel, or delete actions.
+4. Dashboard counts and analytics are derived from the loaded database records. Missing data is shown as an empty state, not fabricated chart values.
+5. Logging out removes the token and returns to sign-in. Expired or rejected sessions are cleared when a protected request fails.
 
-The dashboard admits `admin` and `doctor` accounts. Patient accounts can authenticate through the API, but patient self-service screens are not implemented.
+The dashboard admits `admin`, `doctor`, and `receptionist` accounts. Doctor accounts must be linked to a doctor profile through `users.doctor_id`; doctors only see and manage their assigned appointments and records. Patient accounts can authenticate through the API, but patient self-service screens are not implemented.
 
 ## API overview
 
@@ -97,15 +97,18 @@ All routes are prefixed with `/api`. JSON request bodies are expected where appl
 | --- | --- | --- |
 | `/auth/login` | `POST` | Public |
 | `/auth/register` | `POST` | Admin |
-| `/patients` | `GET`, `POST` | Admin, doctor |
-| `/patients/:id` | `GET`, `PUT` | Admin, doctor |
+| `/patients` | `GET` | Admin, receptionist; doctors only for patients they treat |
+| `/patients` | `POST` | Admin, receptionist |
+| `/patients/:id` | `GET` | Admin, receptionist; doctors only for patients they treat |
+| `/patients/:id` | `PUT` | Admin, receptionist |
 | `/patients/:id` | `DELETE` | Admin |
-| `/doctors` | `GET` | Admin, doctor, patient |
+| `/doctors` | `GET` | Admin, doctor, patient, receptionist |
 | `/doctors` | `POST` | Admin |
-| `/doctors/:id` | `GET` | Admin, doctor, patient |
+| `/doctors/:id` | `GET` | Admin, doctor, patient, receptionist |
 | `/doctors/:id` | `PUT`, `DELETE` | Admin |
-| `/appointments` and `/appointments/:id` | `GET`, `POST`, `PUT`, `DELETE` | Admin, doctor |
-| `/medical-records` and `/medical-records/:id` | `GET`, `POST`, `PUT`, `DELETE` | Admin, doctor |
+| `/appointments` and `/appointments/:id` | `GET`, `POST`, `PUT` | Admin, receptionist; doctors only for their linked profile |
+| `/appointments/:id` | `DELETE` | Admin |
+| `/medical-records` and `/medical-records/:id` | `GET`, `POST`, `PUT`, `DELETE` | Admin; doctors only for their linked profile |
 | `/admin-test` | `GET` | Admin |
 | `/test-db` | `GET` | Public connectivity check |
 
@@ -120,7 +123,9 @@ middleware/auth.js         JWT and role middleware
 routes/                    Authentication and clinic API routes
 schema.sql                 Fresh-install database schema
 frontend/src/App.jsx        Staff dashboard and sign-in screen
+frontend/src/ClinicWorkspace.jsx Role-aware pages, dialogs, and analytics
 frontend/src/services/api.js Shared frontend API client
+migrations/                 Existing-database SQL upgrades
 ```
 
 ## Checks and scripts
@@ -137,4 +142,16 @@ To lint or build the frontend directly, run `npm --prefix frontend run lint` or 
 
 ## Existing databases
 
-`schema.sql` creates missing tables but does not alter existing tables. Back up an existing database, then verify its columns and constraints match `schema.sql`; the medical-record API expects `diagnosis` and `treatment` columns in addition to `patient_id`, `doctor_id`, `visit_date`, and `notes`.
+`schema.sql` creates missing tables but does not alter existing tables. Back up an older database, then apply the one-time upgrade for receptionist accounts, doctor-profile links, and medical-record fields:
+
+```sh
+mysql -u root -p smart_clinic < migrations/001_staff_roles_and_record_fields.sql
+```
+
+Do not run that migration more than once. The migration adds `users.doctor_id` and medical-record `diagnosis` and `treatment` columns. Create doctor accounts through the admin-only `/api/auth/register` endpoint with `doctor_id`. For existing doctor accounts, link each username to its doctor profile once:
+
+```sql
+UPDATE users SET doctor_id = 7 WHERE username = 'doctor-username' AND role = 'doctor';
+```
+
+Replace the sample ID and username with the matching records in your database. Doctor access is scoped by this link.

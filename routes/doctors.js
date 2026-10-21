@@ -69,7 +69,7 @@ router.post(
 router.get(
     "/",
     authenticateToken,
-    authorizeRoles("admin", "doctor", "patient"),
+    authorizeRoles("admin", "doctor", "patient", "receptionist"),
     async (req, res) => {
     try {
         const [doctors] = await db.query(
@@ -100,7 +100,7 @@ router.get(
 router.get(
     "/:id",
     authenticateToken,
-    authorizeRoles("admin", "doctor", "patient"),
+    authorizeRoles("admin", "doctor", "patient", "receptionist"),
     async (req, res) => {
     try {
         const [doctors] = await db.query(
@@ -215,6 +215,12 @@ router.delete(
 
     } catch (error) {
         console.error(error);
+
+        if (["ER_ROW_IS_REFERENCED", "ER_ROW_IS_REFERENCED_2"].includes(error.code)) {
+            return res.status(409).json({
+                message: "Doctor has linked appointments or medical records and cannot be deleted"
+            });
+        }
 
         res.status(500).json({
             message: "Failed to delete doctor",

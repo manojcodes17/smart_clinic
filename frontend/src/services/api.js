@@ -40,7 +40,9 @@ const apiFetch = async (endpoint, options = {}) => {
   }
 
   if (!response.ok) {
-    throw new Error(data.message || "API request failed");
+    const error = new Error(data.message || "API request failed");
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -61,6 +63,15 @@ export const createPatient = async (patient) => {
   });
 };
 
+export const updatePatient = (id, patient) =>
+  apiFetch(`/patients/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(patient),
+  });
+
+export const deletePatient = (id) =>
+  apiFetch(`/patients/${id}`, { method: "DELETE" });
+
 // ==========================================
 // DOCTORS
 // ==========================================
@@ -68,6 +79,21 @@ export const createPatient = async (patient) => {
 export const getDoctors = async () => {
   return apiFetch("/doctors");
 };
+
+export const createDoctor = (doctor) =>
+  apiFetch("/doctors", {
+    method: "POST",
+    body: JSON.stringify(doctor),
+  });
+
+export const updateDoctor = (id, doctor) =>
+  apiFetch(`/doctors/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(doctor),
+  });
+
+export const deleteDoctor = (id) =>
+  apiFetch(`/doctors/${id}`, { method: "DELETE" });
 
 // ==========================================
 // APPOINTMENTS
@@ -77,6 +103,21 @@ export const getAppointments = async () => {
   return apiFetch("/appointments");
 };
 
+export const createAppointment = (appointment) =>
+  apiFetch("/appointments", {
+    method: "POST",
+    body: JSON.stringify(appointment),
+  });
+
+export const updateAppointment = (id, appointment) =>
+  apiFetch(`/appointments/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(appointment),
+  });
+
+export const deleteAppointment = (id) =>
+  apiFetch(`/appointments/${id}`, { method: "DELETE" });
+
 // ==========================================
 // MEDICAL RECORDS
 // ==========================================
@@ -84,6 +125,21 @@ export const getAppointments = async () => {
 export const getMedicalRecords = async () => {
   return apiFetch("/medical-records");
 };
+
+export const createMedicalRecord = (record) =>
+  apiFetch("/medical-records", {
+    method: "POST",
+    body: JSON.stringify(record),
+  });
+
+export const updateMedicalRecord = (id, record) =>
+  apiFetch(`/medical-records/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(record),
+  });
+
+export const deleteMedicalRecord = (id) =>
+  apiFetch(`/medical-records/${id}`, { method: "DELETE" });
 
 // ==========================================
 // LOGIN

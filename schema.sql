@@ -4,16 +4,6 @@ CREATE DATABASE IF NOT EXISTS smart_clinic
 
 USE smart_clinic;
 
-CREATE TABLE IF NOT EXISTS users (
-  user_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  username VARCHAR(100) NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  role ENUM('admin', 'doctor', 'patient') NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id),
-  UNIQUE KEY uq_users_username (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 CREATE TABLE IF NOT EXISTS patients (
   patient_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   name VARCHAR(150) NOT NULL,
@@ -37,6 +27,19 @@ CREATE TABLE IF NOT EXISTS doctors (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (doctor_id),
   KEY idx_doctors_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS users (
+  user_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('admin', 'doctor', 'patient', 'receptionist') NOT NULL,
+  doctor_id INT UNSIGNED NULL UNIQUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id),
+  UNIQUE KEY uq_users_username (username),
+  CONSTRAINT fk_users_doctor FOREIGN KEY (doctor_id)
+    REFERENCES doctors (doctor_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS appointments (

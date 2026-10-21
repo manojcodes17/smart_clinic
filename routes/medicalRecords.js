@@ -27,6 +27,21 @@ router.post("/", async (req, res) => {
                 message: "patient_id, doctor_id and visit_date are required"
             });
         }
+        if (req.user.role === "doctor" && String(doctor_id) !== String(req.user.doctor_id)) {
+            return res.status(403).json({ message: "Doctors can only create records for their own profile" });
+        }
+
+        const [patients] = await db.execute(
+            "SELECT patient_id FROM patients WHERE patient_id = ?",
+            [patient_id]
+        );
+        const [doctors] = await db.execute(
+            "SELECT doctor_id FROM doctors WHERE doctor_id = ?",
+            [doctor_id]
+        );
+        if (patients.length === 0 || doctors.length === 0) {
+            return res.status(404).json({ message: "Patient or doctor not found" });
+        }
 
         const [result] = await db.execute(
             `INSERT INTO medical_records
@@ -61,14 +76,16 @@ router.post("/", async (req, res) => {
 // Get all medical records
 router.get("/", async (req, res) => {
     try {
-
+        const doctorScope = req.user.role === "doctor" ? "WHERE mr.doctor_id = ?" : "";
+        const parameters = req.user.role === "doctor" ? [req.user.doctor_id] : [];
         const [records] = await db.execute(`
             SELECT mr.*, p.name AS patient_name, d.name AS doctor_name
             FROM medical_records mr
             JOIN patients p ON mr.patient_id = p.patient_id
             JOIN doctors d ON mr.doctor_id = d.doctor_id
+            ${doctorScope}
             ORDER BY mr.visit_date DESC
-        `);
+        `, parameters);
 
         res.json({
             count: records.length,
@@ -87,10 +104,13 @@ router.get("/", async (req, res) => {
 // Get medical record by ID
 router.get("/:id", async (req, res) => {
     try {
-
+        const doctorScope = req.user.role === "doctor" ? "AND doctor_id = ?" : "";
+        const parameters = req.user.role === "doctor"
+            ? [req.params.id, req.user.doctor_id]
+            : [req.params.id];
         const [records] = await db.execute(
-            `SELECT * FROM medical_records WHERE record_id = ?`,
-            [req.params.id]
+            `SELECT * FROM medical_records WHERE record_id = ? ${doctorScope}`,
+            parameters
         );
 
         if (records.length === 0) {
@@ -123,9 +143,13 @@ router.put("/:id", async (req, res) => {
         } = req.body;
 
         // Get existing record first
+        const doctorScope = req.user.role === "doctor" ? "AND doctor_id = ?" : "";
+        const existingParameters = req.user.role === "doctor"
+            ? [req.params.id, req.user.doctor_id]
+            : [req.params.id];
         const [existing] = await db.execute(
-            "SELECT * FROM medical_records WHERE record_id = ?",
-            [req.params.id]
+            `SELECT * FROM medical_records WHERE record_id = ? ${doctorScope}`,
+            existingParameters
         );
 
         if (existing.length === 0) {
@@ -143,6 +167,10 @@ router.put("/:id", async (req, res) => {
         const updatedDoctorId =
             doctor_id !== undefined ? doctor_id : record.doctor_id;
 
+        if (req.user.role === "doctor" && String(updatedDoctorId) !== String(req.user.doctor_id)) {
+            return res.status(403).json({ message: "Doctors can only update their own records" });
+        }
+
         const updatedVisitDate =
             visit_date !== undefined ? visit_date : record.visit_date;
 
@@ -154,6 +182,18 @@ router.put("/:id", async (req, res) => {
 
         const updatedNotes =
             notes !== undefined ? notes : record.notes;
+
+        const [patients] = await db.execute(
+            "SELECT patient_id FROM patients WHERE patient_id = ?",
+            [updatedPatientId]
+        );
+        const [doctors] = await db.execute(
+            "SELECT doctor_id FROM doctors WHERE doctor_id = ?",
+            [updatedDoctorId]
+        );
+        if (patients.length === 0 || doctors.length === 0) {
+            return res.status(404).json({ message: "Patient or doctor not found" });
+        }
 
         const [result] = await db.execute(
             `UPDATE medical_records
@@ -197,10 +237,14 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
     try {
         const { id } = req.params;
+        const doctorScope = req.user.role === "doctor" ? "AND doctor_id = ?" : "";
+        const parameters = req.user.role === "doctor"
+            ? [id, req.user.doctor_id]
+            : [id];
 
         const [result] = await db.execute(
-            "DELETE FROM medical_records WHERE record_id = ?",
-            [id]
+            `DELETE FROM medical_records WHERE record_id = ? ${doctorScope}`,
+            parameters
         );
 
         if (result.affectedRows === 0) {

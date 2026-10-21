@@ -7,7 +7,7 @@ const router = express.Router();
 
 const db = require("../db");
 
-router.use(authenticateToken, authorizeRoles("admin", "doctor"));
+router.use(authenticateToken, authorizeRoles("admin", "doctor", "receptionist"));
 
 
 // ==========================================
@@ -17,8 +17,7 @@ router.use(authenticateToken, authorizeRoles("admin", "doctor"));
 
 router.post(
     "/",
-    authenticateToken,
-    authorizeRoles("admin", "doctor", "patient"),
+    authorizeRoles("admin", "doctor", "receptionist"),
     async (req, res) => {
 
     try {
@@ -46,6 +45,12 @@ router.post(
                 message: "Patient, doctor, date and time are required"
             });
 
+        }
+
+        if (req.user.role === "doctor" && String(doctor_id) !== String(req.user.doctor_id)) {
+            return res.status(403).json({
+                message: "Doctors can only schedule visits for their own profile"
+            });
         }
 
 
@@ -120,7 +125,7 @@ router.post(
              WHERE doctor_id = ?
              AND appointment_date = ?
              AND appointment_time = ?
-             AND status = 'Scheduled'`,
+             AND status IN ('Scheduled', 'Confirmed')`,
             [
                 doctor_id,
                 appointment_date,
@@ -147,7 +152,7 @@ router.post(
              WHERE patient_id = ?
              AND appointment_date = ?
              AND appointment_time = ?
-             AND status = 'Scheduled'`,
+             AND status IN ('Scheduled', 'Confirmed')`,
             [
                 patient_id,
                 appointment_date,
@@ -238,7 +243,8 @@ router.post(
 router.get("/", async (req, res) => {
 
     try {
-
+        const doctorScope = req.user.role === "doctor" ? "WHERE a.doctor_id = ?" : "";
+        const parameters = req.user.role === "doctor" ? [req.user.doctor_id] : [];
         const [appointments] = await db.query(
 
             `SELECT
@@ -262,9 +268,11 @@ router.get("/", async (req, res) => {
              JOIN doctors d
              ON a.doctor_id = d.doctor_id
 
+                 ${doctorScope}
              ORDER BY
                 a.appointment_date,
-                a.appointment_time`
+                     a.appointment_time`,
+                parameters
 
         );
 
@@ -297,6 +305,10 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
     try {
         const { id } = req.params;
+        const doctorScope = req.user.role === "doctor" ? "AND doctor_id = ?" : "";
+        const parameters = req.user.role === "doctor"
+            ? [id, req.user.doctor_id]
+            : [id];
 
         const [appointments] = await db.execute(
             `SELECT 
@@ -307,8 +319,8 @@ router.get("/:id", async (req, res) => {
                 patient_id,
                 doctor_id
              FROM appointments
-             WHERE appointment_id = ?`,
-            [id]
+             WHERE appointment_id = ? ${doctorScope}`,
+            parameters
         );
 
         if (appointments.length === 0) {
@@ -332,18 +344,82 @@ router.put("/:id", async (req, res) => {
     try {
         const { id } = req.params;
         const {
+            patient_id,
+            doctor_id,
             appointment_date,
             appointment_time,
             status
         } = req.body;
 
+        const allowedStatuses = ["Scheduled", "Confirmed", "Completed", "Cancelled"];
+        if (!patient_id || !doctor_id || !appointment_date || !appointment_time || !allowedStatuses.includes(status)) {
+            return res.status(400).json({
+                message: "Patient, doctor, date, time and a valid status are required"
+            });
+        }
+        if (req.user.role === "receptionist" && status === "Completed") {
+            return res.status(403).json({
+                message: "Only a doctor or admin can complete an appointment"
+            });
+        }
+
+        const appointmentDateTime = new Date(`${appointment_date}T${appointment_time}`);
+        if (Number.isNaN(appointmentDateTime.getTime())) {
+            return res.status(400).json({ message: "Invalid date or time" });
+        }
+        if (["Scheduled", "Confirmed"].includes(status) && appointmentDateTime < new Date()) {
+            return res.status(400).json({ message: "Appointment cannot be scheduled in the past" });
+        }
+
+        const [patients] = await db.execute(
+            "SELECT patient_id FROM patients WHERE patient_id = ?",
+            [patient_id]
+        );
+        const [doctors] = await db.execute(
+            "SELECT doctor_id FROM doctors WHERE doctor_id = ?",
+            [doctor_id]
+        );
+        if (patients.length === 0 || doctors.length === 0) {
+            return res.status(404).json({ message: "Patient or doctor not found" });
+        }
+
+        const [existingAppointments] = await db.execute(
+            "SELECT doctor_id FROM appointments WHERE appointment_id = ?",
+            [id]
+        );
+        if (existingAppointments.length === 0 || (req.user.role === "doctor" && String(existingAppointments[0].doctor_id) !== String(req.user.doctor_id))) {
+            return res.status(404).json({ message: "Appointment not found" });
+        }
+
+        if (["Scheduled", "Confirmed"].includes(status)) {
+            const [conflicts] = await db.execute(
+                `SELECT appointment_id
+                 FROM appointments
+                 WHERE appointment_id <> ?
+                   AND appointment_date = ?
+                   AND appointment_time = ?
+                   AND status IN ('Scheduled', 'Confirmed')
+                   AND (doctor_id = ? OR patient_id = ?)` ,
+                [id, appointment_date, appointment_time, doctor_id, patient_id]
+            );
+            if (conflicts.length > 0) {
+                return res.status(409).json({
+                    message: "The patient or doctor already has an appointment at this time"
+                });
+            }
+        }
+
         const [result] = await db.execute(
             `UPDATE appointments
-             SET appointment_date = ?,
+             SET patient_id = ?,
+                 doctor_id = ?,
+                 appointment_date = ?,
                  appointment_time = ?,
                  status = ?
              WHERE appointment_id = ?`,
             [
+                patient_id,
+                doctor_id,
                 appointment_date,
                 appointment_time,
                 status,
@@ -370,7 +446,11 @@ router.put("/:id", async (req, res) => {
     }
 });
 // DELETE appointment
-router.delete('/:id', async (req, res) => {
+router.delete(
+    "/:id",
+    authenticateToken,
+    authorizeRoles("admin"),
+    async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -402,5 +482,6 @@ router.delete('/:id', async (req, res) => {
             error: err.message
         });
     }
-});
+    }
+);
 module.exports = router;
