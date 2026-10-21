@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 // ==========================================
 // GET TOKEN
@@ -52,6 +52,13 @@ const apiFetch = async (endpoint, options = {}) => {
 
 export const getPatients = async () => {
   return apiFetch("/patients");
+};
+
+export const createPatient = async (patient) => {
+  return apiFetch("/patients", {
+    method: "POST",
+    body: JSON.stringify(patient),
+  });
 };
 
 // ==========================================

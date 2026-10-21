@@ -97,7 +97,11 @@ router.get(
 // GET /api/doctors/:id
 // ==========================================
 
-router.get("/:id", async (req, res) => {
+router.get(
+    "/:id",
+    authenticateToken,
+    authorizeRoles("admin", "doctor", "patient"),
+    async (req, res) => {
     try {
         const [doctors] = await db.query(
             "SELECT * FROM doctors WHERE doctor_id = ?",
@@ -120,7 +124,8 @@ router.get("/:id", async (req, res) => {
             error: error.message
         });
     }
-});
+    }
+);
 
 
 // ==========================================
@@ -128,7 +133,11 @@ router.get("/:id", async (req, res) => {
 // PUT /api/doctors/:id
 // ==========================================
 
-router.put("/:id", async (req, res) => {
+router.put(
+    "/:id",
+    authenticateToken,
+    authorizeRoles("admin"),
+    async (req, res) => {
     try {
         const {
             name,
@@ -174,7 +183,8 @@ router.put("/:id", async (req, res) => {
             error: error.message
         });
     }
-});
+    }
+);
 
 
 // ==========================================
@@ -182,7 +192,11 @@ router.put("/:id", async (req, res) => {
 // DELETE /api/doctors/:id
 // ==========================================
 
-router.delete("/:id", async (req, res) => {
+router.delete(
+    "/:id",
+    authenticateToken,
+    authorizeRoles("admin"),
+    async (req, res) => {
     try {
         const [result] = await db.query(
             "DELETE FROM doctors WHERE doctor_id = ?",
@@ -207,7 +221,8 @@ router.delete("/:id", async (req, res) => {
             error: error.message
         });
     }
-});
+    }
+);
 
 
 module.exports = router;

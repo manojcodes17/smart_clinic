@@ -2,6 +2,12 @@ const express = require("express");
 const router = express.Router();
 
 const db = require("../db");
+const {
+    authenticateToken,
+    authorizeRoles
+} = require("../middleware/auth");
+
+router.use(authenticateToken, authorizeRoles("admin", "doctor"));
 
 
 // Create medical record
@@ -11,6 +17,8 @@ router.post("/", async (req, res) => {
             patient_id,
             doctor_id,
             visit_date,
+            diagnosis,
+            treatment,
             notes
         } = req.body;
 
@@ -22,12 +30,14 @@ router.post("/", async (req, res) => {
 
         const [result] = await db.execute(
             `INSERT INTO medical_records
-            (patient_id, doctor_id, visit_date, notes)
-            VALUES (?, ?, ?, ?)`,
+            (patient_id, doctor_id, visit_date, diagnosis, treatment, notes)
+            VALUES (?, ?, ?, ?, ?, ?)` ,
             [
                 patient_id,
                 doctor_id,
                 visit_date,
+                diagnosis || null,
+                treatment || null,
                 notes || null
             ]
         );
@@ -53,9 +63,11 @@ router.get("/", async (req, res) => {
     try {
 
         const [records] = await db.execute(`
-            SELECT *
-            FROM medical_records
-            ORDER BY visit_date DESC
+            SELECT mr.*, p.name AS patient_name, d.name AS doctor_name
+            FROM medical_records mr
+            JOIN patients p ON mr.patient_id = p.patient_id
+            JOIN doctors d ON mr.doctor_id = d.doctor_id
+            ORDER BY mr.visit_date DESC
         `);
 
         res.json({
@@ -101,7 +113,14 @@ router.get("/:id", async (req, res) => {
 // Update medical record
 router.put("/:id", async (req, res) => {
     try {
-        const { patient_id, doctor_id, visit_date, notes } = req.body;
+        const {
+            patient_id,
+            doctor_id,
+            visit_date,
+            diagnosis,
+            treatment,
+            notes
+        } = req.body;
 
         // Get existing record first
         const [existing] = await db.execute(
@@ -127,6 +146,12 @@ router.put("/:id", async (req, res) => {
         const updatedVisitDate =
             visit_date !== undefined ? visit_date : record.visit_date;
 
+        const updatedDiagnosis =
+            diagnosis !== undefined ? diagnosis : record.diagnosis;
+
+        const updatedTreatment =
+            treatment !== undefined ? treatment : record.treatment;
+
         const updatedNotes =
             notes !== undefined ? notes : record.notes;
 
@@ -135,12 +160,16 @@ router.put("/:id", async (req, res) => {
              SET patient_id = ?,
                  doctor_id = ?,
                  visit_date = ?,
+                 diagnosis = ?,
+                 treatment = ?,
                  notes = ?
              WHERE record_id = ?`,
             [
                 updatedPatientId,
                 updatedDoctorId,
                 updatedVisitDate,
+                updatedDiagnosis,
+                updatedTreatment,
                 updatedNotes,
                 req.params.id
             ]

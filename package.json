@@ -1,10 +1,14 @@
 {
   "name": "smart_clinic",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Clinic management API and dashboard",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "lint": "npm --prefix frontend run lint",
+    "build": "npm --prefix frontend run build",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

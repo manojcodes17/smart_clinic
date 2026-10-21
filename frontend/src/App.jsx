@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 
 import {
@@ -6,6 +6,9 @@ import {
   getDoctors,
   getAppointments,
   getMedicalRecords,
+  createPatient,
+  getCurrentUser,
+  login,
   logout,
 } from "./services/api";
 
@@ -23,63 +26,92 @@ function App() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [user, setUser] = useState(() => {
+    const savedUser = getCurrentUser();
+    return ["admin", "doctor"].includes(savedUser?.role)
+      ? savedUser
+      : null;
+  });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   // =========================================================
   // LOAD ALL CLINIC DATA
   // =========================================================
 
-  useEffect(() => {
-    loadClinicData();
+  const fetchClinicData = useCallback(async () => {
+    const [
+      patientsResponse,
+      doctorsResponse,
+      appointmentsResponse,
+      recordsResponse,
+    ] = await Promise.all([
+      getPatients(),
+      getDoctors(),
+      getAppointments(),
+      getMedicalRecords(),
+    ]);
+
+    return {
+      patients: patientsResponse?.patients || patientsResponse || [],
+      doctors: doctorsResponse?.doctors || doctorsResponse || [],
+      appointments: appointmentsResponse?.appointments || appointmentsResponse || [],
+      medicalRecords:
+        recordsResponse?.records ||
+        recordsResponse?.medicalRecords ||
+        recordsResponse ||
+        [],
+    };
   }, []);
 
-  const loadClinicData = async () => {
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    let active = true;
+
+    fetchClinicData()
+      .then((data) => {
+        if (!active) return;
+        setPatients(data.patients);
+        setDoctors(data.doctors);
+        setAppointments(data.appointments);
+        setMedicalRecords(data.medicalRecords);
+        setError("");
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Dashboard loading error:", err);
+        setError(err.message || "Unable to load clinic data.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [fetchClinicData, user]);
+
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+
     try {
-      setLoading(true);
-      setError("");
+      const result = await login(username, password);
 
-      const [
-        patientsResponse,
-        doctorsResponse,
-        appointmentsResponse,
-        recordsResponse,
-      ] = await Promise.all([
-        getPatients(),
-        getDoctors(),
-        getAppointments(),
-        getMedicalRecords(),
-      ]);
+      if (!["admin", "doctor"].includes(result.user.role)) {
+        logout();
+        setError("This dashboard is available to clinic staff only.");
+        return;
+      }
 
-      setPatients(
-        patientsResponse?.patients ||
-          patientsResponse ||
-          []
-      );
-
-      setDoctors(
-        doctorsResponse?.doctors ||
-          doctorsResponse ||
-          []
-      );
-
-      setAppointments(
-        appointmentsResponse?.appointments ||
-          appointmentsResponse ||
-          []
-      );
-
-      setMedicalRecords(
-        recordsResponse?.records ||
-          recordsResponse?.medicalRecords ||
-          recordsResponse ||
-          []
-      );
+      setUser(result.user);
+      setPassword("");
     } catch (err) {
-      console.error("Dashboard loading error:", err);
-      setError(
-        err.message || "Unable to load clinic data."
-      );
-    } finally {
-      setLoading(false);
+      setError(err.message || "Unable to sign in.");
     }
   };
 
@@ -89,7 +121,8 @@ function App() {
 
   const handleLogout = () => {
     logout();
-    window.location.href = "/";
+    setUser(null);
+    setCurrentPage("dashboard");
   };
 
   // =========================================================
@@ -137,8 +170,8 @@ function App() {
               </div>
 
               <div>
-                <strong>Admin</strong>
-                <span>Administrator</span>
+                <strong>{user.username}</strong>
+                <span>{user.role}</span>
               </div>
             </div>
           </div>
@@ -446,47 +479,7 @@ function App() {
 
       try {
         setSubmitting(true);
-
-        const token =
-          localStorage.getItem("token");
-
-        const response = await fetch(
-          "http://localhost:5000/api/patients",
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-
-              ...(token
-                ? {
-                    Authorization:
-                      `Bearer ${token}`,
-                  }
-                : {}),
-            },
-
-            body: JSON.stringify({
-              name: formData.name,
-              dob: formData.dob,
-              gender: formData.gender,
-              phone: formData.phone,
-              email: formData.email,
-              address: formData.address,
-            }),
-          }
-        );
-
-        const data =
-          await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data.message ||
-              "Failed to register patient."
-          );
-        }
+        await createPatient(formData);
 
         alert(
           "Patient registered successfully! ✅"
@@ -494,7 +487,11 @@ function App() {
 
         resetForm();
 
-        await loadClinicData();
+        const clinicData = await fetchClinicData();
+        setPatients(clinicData.patients);
+        setDoctors(clinicData.doctors);
+        setAppointments(clinicData.appointments);
+        setMedicalRecords(clinicData.medicalRecords);
 
       } catch (error) {
 
@@ -540,8 +537,8 @@ function App() {
               </div>
 
               <div>
-                <strong>Admin</strong>
-                <span>Administrator</span>
+                <strong>{user.username}</strong>
+                <span>{user.role}</span>
               </div>
 
             </div>
@@ -1274,7 +1271,7 @@ function App() {
                         </td>
 
                         <td>
-                          {record.created_at ||
+                          {record.visit_date ||
                             record.date ||
                             "-"}
                         </td>
@@ -1509,6 +1506,45 @@ function App() {
         return <DashboardPage />;
     }
   };
+
+
+  if (!user) {
+    return (
+      <main className="login-shell">
+        <form className="login-form" onSubmit={handleLogin}>
+          <div className="logo-icon">+</div>
+          <p className="login-eyebrow">SMART CLINIC</p>
+          <h1>Staff sign in</h1>
+          <p className="login-description">Sign in to manage clinic operations.</p>
+
+          {error && <div className="error-box" role="alert">{error}</div>}
+
+          <label htmlFor="username">Username</label>
+          <input
+            id="username"
+            name="username"
+            autoComplete="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            required
+          />
+
+          <label htmlFor="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+
+          <button type="submit" className="submit-button">Sign in</button>
+        </form>
+      </main>
+    );
+  }
 
 
   // =========================================================

@@ -95,6 +95,27 @@ p {
   margin: 0;
 }
 
+:root {
+  color-scheme: light;
+  color: #172033;
+  background: #f5f7fb;
+  font-family: Inter, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  text-align: left;
+  border: 0;
+}
+
 code,
 .counter {
   font-family: var(--mono);

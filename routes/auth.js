@@ -1,6 +1,10 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const {
+    authenticateToken,
+    authorizeRoles
+} = require("../middleware/auth");
 
 const router = express.Router();
 const db = require("../db");
@@ -11,7 +15,11 @@ const db = require("../db");
 // POST /api/auth/register
 // ==========================================
 
-router.post("/register", async (req, res) => {
+router.post(
+    "/register",
+    authenticateToken,
+    authorizeRoles("admin"),
+    async (req, res) => {
 
     try {
 
@@ -86,7 +94,8 @@ router.post("/register", async (req, res) => {
 
     }
 
-});
+    }
+);
 
 
 // ==========================================
